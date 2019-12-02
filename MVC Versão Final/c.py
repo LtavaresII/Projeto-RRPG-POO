@@ -11,7 +11,7 @@ import threading
 from threading import Thread
 import pickle
 import select
-from RRPGModel import ErroSenhaUsuarioIncorreto, ErroAtualizarFicha, ErroComandoInvalido, ErroUsuarioIncorreto, ErroOpcaoNaoValida, ErroCriacaoUsuario, ErroCriarFicha, ErroCriacaodeSala, Usuario, Ficha, Sala, RolagemdeDados, Login, MyEncoder
+from RRPGModel import ErroSenhaUsuarioIncorreto, ErroAtualizarFicha, ErroComandoInvalido, ErroUsuarioIncorreto, ErroOpcaoNaoValida, ErroCriacaoUsuario, ErroCriarFicha, ErroCriacaodeSala, Usuario, Ficha, Sala, RolagemdeDados, Login, AtualizarSala, AtualizarFicha, AbrirSala, MyEncoder
 from RRPGView import LoginGUI, TelaSalaGUI, SalaGUI, FichaGUI
 
 HOST = '127.0.0.1'  # Endereco IP
@@ -41,7 +41,7 @@ class Cliente:
 		elif n == 2:
 			view = SalaGUI(self.root, self)
 			self.Atualizar()
-			tela = Controller._data["Sala"]
+			tela = Cliente._data["Sala"]
 		elif n == 3:
 			view = FichaGUI(self.root, self)
 			tela = 'Fichas'
@@ -84,10 +84,18 @@ class Cliente:
 			resposta = self._conn.recv(2048)
 			r = resposta.decode()
 			if r == 'True':
-				Cliente._data["Usuario"] = Email
-				self.view.logar_ok()
-				self.root.destroy()
-				Cliente(HOST,PORT,1,s)
+				try:
+					Cliente._data["Usuario"] = Email
+					self.view.logar_ok()
+					self.root.destroy()
+					with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+						s.connect((HOST, PORT))
+						C = Cliente(HOST,PORT,1,s)
+						C.iniciar()
+			
+				except Exception as E:
+					print('Erro na conexao...{0}'.format(E))
+					raise E
 			else:
 				self.view.logar_erro()
 		except ErroSenhaUsuarioIncorreto:
@@ -95,14 +103,15 @@ class Cliente:
 			
 	#Tela das Salas..............................................................
 	
-	#def Criar(self):
-		#self.view.Sala()
+	def criar(self):
+		self.view.sala()
 		
 	def criar_sala(self, nome):
 		self._conn.send(b'criar sala')
 		try:
 			usuario = Cliente._data["Usuario"]
 			if nome !="" and usuario != "":
+				
 				S = Sala(nome, usuario)
 				
 				self._conn.send(str.encode(json.dumps(S, cls= MyEncoder)))
@@ -125,33 +134,41 @@ class Cliente:
 		self._conn.send(b'abrir sala')
 		try:
 			if nome !="":
+				AS = AbrirSala(nome)
 				
-				self._conn.sendall(nome)
+				self._conn.send(str.encode(json.dumps(AS, cls= MyEncoder)))
 				
-				L = self._conn.recv(2048)
+				dados = b''
+				while True:
+					d= self._conn.recv(2048)
+					dados += d
+					if  len(d)< 2048:
+						break
+
+				L = json.loads(dados.decode(),object_hook=MyEncoder.decode)
 				usuario = Cliente._data["Usuario"]
 				for s in L:
 					sala = s._Nome
 					u = s._Usuario
 					for x in u:
 						for q in x:
-							Cliente._data["UsuarioC"] = q
-							uc = Cliente._data["UsuarioC"]
-							if uc == usuario:
-								try:
-									Cliente._data["Sala"] = sala
-									self.root.destroy()
-									with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-										s.connect((HOST, PORT))
-										print("Conectado!")
-										C = Cliente(HOST,PORT,2,s)
-										C.iniciar()
+							for e in q:
+								Cliente._data["UsuarioC"] = e
+								uc = Cliente._data["UsuarioC"]
+								if uc == usuario:
+									try:
+										Cliente._data["Sala"] = sala
+										self.root.destroy()
+										with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+											s.connect((HOST, PORT))
+											C = Cliente(HOST,PORT,2,s)
+											C.iniciar()
 			
-								except Exception as E:
-									print('Erro na conexao...{0}'.format(E))
-									raise E
-							else:
-								self.view.abrir_sala_erro()
+									except Exception as E:
+										print('Erro na conexao...{0}'.format(E))
+										raise E
+								else:
+									self.view.abrir_sala_erro()
 			else:
 				self.view.abrir_sala_erro()
 		except ErroOpcaoNaoValida:
@@ -162,7 +179,6 @@ class Cliente:
 			self.root.destroy()
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				s.connect((HOST, PORT))
-				print("Conectado!")
 				C = Cliente(HOST,PORT,0,s)
 				C.iniciar()
 			
@@ -176,7 +192,6 @@ class Cliente:
 		try:
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				s.connect((HOST, PORT))
-				print("Conectado!")
 				C = Cliente(HOST,PORT,3,s)
 				C.iniciar()
 			
@@ -190,7 +205,7 @@ class Cliente:
 			sala = Cliente._data["Sala"]
 			AS = AtualizarSala(sala,usuario)
 			
-			self._conn.send(str.encode(json.dumps(A, cls= MyEncoder)))
+			self._conn.send(str.encode(json.dumps(AS, cls= MyEncoder)))
 			
 			resposta = self._conn.recv(2048)
 			r = resposta.decode()
@@ -206,7 +221,6 @@ class Cliente:
 			self.root.destroy()
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				s.connect((HOST, PORT))
-				print("Conectado!")
 				C = Cliente(HOST,PORT,1,s)
 				C.iniciar()
 			
@@ -221,7 +235,7 @@ class Cliente:
 		try:        
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				s.connect((HOST, PORT))
-				usuario = Controller._data["Usuario"]
+				usuario = Cliente._data["Usuario"]
 				msg = str(usuario)+ ": " +msg
 				#botar nome do usuario
 				s.send(msg.encode())
@@ -250,13 +264,38 @@ class Cliente:
 			print('chat nao existe...'.format(E))
 			raise E
 			
+	#Dados........................................................................
+	def jogar_dados(self, ND, DPR):
+		self._conn.send(b'rolar dados')
+		
+		R = RolagemdeDados(ND,DPR)
+		
+		self._conn.send(str.encode(json.dumps(R, cls= MyEncoder)))
+		
+		dados = b''
+		while True:
+			d= self._conn.recv(2048)
+			dados += d
+			if len(d)< 2048:
+				break
+
+		L = json.loads(dados.decode(),object_hook=MyEncoder.decode)
+		
+		if L != "erro":
+			valores = L[0]
+			soma = L[1]
+			msg = "Valores: {0}; Soma: {1}".format(valores, soma)
+			self.receber(msg)
+		else:
+			self.view.erro_dados()
+			
 	#Fichas........................................................................
 	
 	def salvar_ficha(self, nome, raca, classe, nivel, vida, ca, deslc, antec, forc, dex, cons, intl, sab, car, equip, info, ataq, peri, test):
 		self._conn.send(b'salvar ficha')
 		try:
-			sala = Controller._data["Sala"]
-			usuario = Controller._data["Usuario"]
+			sala = Cliente._data["Sala"]
+			usuario = Cliente._data["Usuario"]
 			
 			F = Ficha(nome, raca, classe, nivel, vida, ca, deslc, antec, forc, dex, cons, intl, sab, car, equip, info, ataq, peri, test, usuario, sala)
 			
@@ -292,6 +331,8 @@ class Cliente:
 		
 	def fechar(self):
 		self.root.destroy()
+		
+	
 
 if __name__ == '__main__':
 	try:
